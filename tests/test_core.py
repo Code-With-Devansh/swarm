@@ -8,21 +8,21 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]
                        / "controllers" / "swarm_drone"))
 
 from swarm_core import (Peer, pack_state, unpack_state, MSG_SIZE, roles,
-                        follower_slot, offsets, repulsion)
+                        follower_slot, offsets, repulsion, leader_speed_scale, slew_angle)
 
 
-def peer(t=0.0, x=0.0, y=0.0, z=10.0, vx=0.0, vy=0.0, yaw=0.0, pat=0, sp=8.0):
-    return Peer(t, x, y, z, vx, vy, yaw, pat, sp)
+def peer(t=0.0, x=0.0, y=0.0, z=10.0, vx=0.0, vy=0.0, yaw=0.0, pat=0, sp=8.0, err=0.0):
+    return Peer(t, x, y, z, vx, vy, yaw, pat, sp, err)
 
 
 class Messages(unittest.TestCase):
     def test_roundtrip(self):
-        data = pack_state(3, 1.5, -2.5, 10.0, 0.5, -0.25, 1.0, 2, 8.0)
+        data = pack_state(3, 1.5, -2.5, 10.0, 0.5, -0.25, 1.0, 2, 8.0, 6.5)
         self.assertEqual(len(data), MSG_SIZE)
         pid, p = unpack_state(data, 12.0)
         self.assertEqual(pid, 3)
         self.assertEqual((p.t, p.x, p.y, p.z), (12.0, 1.5, -2.5, 10.0))
-        self.assertEqual((p.pattern, p.spacing), (2, 8.0))
+        self.assertEqual((p.pattern, p.spacing, p.err), (2, 8.0, 6.5))
 
     def test_rejects_bad_length(self):
         self.assertIsNone(unpack_state(b"\x01\x02", 0.0))
@@ -33,6 +33,28 @@ class Messages(unittest.TestCase):
 
     def test_rejects_bad_pattern(self):
         self.assertIsNone(unpack_state(pack_state(2, 0, 0, 10, 0, 0, 0, 9, 8.0), 0.0))
+
+
+class KeepingTogether(unittest.TestCase):
+    def test_full_speed_when_everyone_close(self):
+        self.assertEqual(leader_speed_scale(0.0, 4, 14, 0.15), 1.0)
+        self.assertEqual(leader_speed_scale(4.0, 4, 14, 0.15), 1.0)
+
+    def test_slows_then_floors(self):
+        self.assertAlmostEqual(leader_speed_scale(9.0, 4, 14, 0.15), 0.5)
+        self.assertEqual(leader_speed_scale(50.0, 4, 14, 0.15), 0.15)
+
+    def test_monotonic(self):
+        vals = [leader_speed_scale(e, 4, 14, 0.15) for e in range(0, 30)]
+        self.assertEqual(vals, sorted(vals, reverse=True))
+
+    def test_slew_limits_step(self):
+        self.assertAlmostEqual(slew_angle(0.0, 1.0, 0.1), 0.1)
+        self.assertAlmostEqual(slew_angle(0.0, 0.05, 0.1), 0.05)
+
+    def test_slew_takes_short_way_round(self):
+        a = slew_angle(math.pi - 0.05, -math.pi + 0.05, 0.1)   # 0.1 rad apart across +-pi
+        self.assertAlmostEqual(a, math.pi + 0.05)
 
 
 class Election(unittest.TestCase):

@@ -11,33 +11,35 @@ import struct
 from collections import namedtuple
 
 PATTERNS = ["line", "v", "grid", "circle", "square"]
-CIRCLE_RATE = 0.08              # rad/s, orbit speed of the circle formation
+CIRCLE_RATE = 0.05              # rad/s, orbit speed of the circle formation (~0.75 m/s at r=15)
 
-# id, x, y, z, vx, vy, yaw, pattern index, spacing   (little endian, no padding)
-MSG_FMT = "<B6fBf"
+# id, x, y, z, vx, vy, yaw, pattern index, spacing, slot error   (little endian, no padding)
+#   yaw        : for the leader this is the (slowly turning) FORMATION heading
+#   slot error : how far a follower is from its slot, in metres (0 for the leader)
+MSG_FMT = "<B6fBff"
 MSG_SIZE = struct.calcsize(MSG_FMT)
 
 # t = simulation time at which the packet was RECEIVED
-Peer = namedtuple("Peer", "t x y z vx vy yaw pattern spacing")
+Peer = namedtuple("Peer", "t x y z vx vy yaw pattern spacing err", defaults=(0.0,))
 
 
 # --------------------------------------------------------------------------
 # Messages
 # --------------------------------------------------------------------------
-def pack_state(drone_id, x, y, z, vx, vy, yaw, pattern_idx, spacing):
-    return struct.pack(MSG_FMT, drone_id, x, y, z, vx, vy, yaw, pattern_idx, spacing)
+def pack_state(drone_id, x, y, z, vx, vy, yaw, pattern_idx, spacing, err=0.0):
+    return struct.pack(MSG_FMT, drone_id, x, y, z, vx, vy, yaw, pattern_idx, spacing, err)
 
 
 def unpack_state(data, t):
     """Return (drone_id, Peer) or None if the packet is malformed."""
     if len(data) != MSG_SIZE:
         return None
-    pid, x, y, z, vx, vy, yaw, pat, sp = struct.unpack(MSG_FMT, data)
+    pid, x, y, z, vx, vy, yaw, pat, sp, err = struct.unpack(MSG_FMT, data)
     if pat >= len(PATTERNS):
         return None
-    if not all(math.isfinite(v) for v in (x, y, z, vx, vy, yaw, sp)):
+    if not all(math.isfinite(v) for v in (x, y, z, vx, vy, yaw, sp, err)):
         return None
-    return pid, Peer(t, x, y, z, vx, vy, yaw, pat, sp)
+    return pid, Peer(t, x, y, z, vx, vy, yaw, pat, sp, err)
 
 
 # --------------------------------------------------------------------------
@@ -79,8 +81,8 @@ def offsets(pattern, sp, i, k, t):
         return (-sp * row, sp * col)
     if pattern == "circle":
         r = max(15, sp * k / (2 * math.pi) * 1.5)
-        # 0.08 rad/s -> about 1.2 m/s at r=15, inside the followers' 2 m/s limit
-        # (the old 0.2 rad/s asked for 3 m/s, so they could never keep their slots)
+        # keep the orbit speed well inside what followers can fly (the original 0.2 rad/s
+        # asked for 3 m/s at r=15, so they could never keep their slots)
         a = 2 * math.pi * i / max(k, 1) + CIRCLE_RATE * t
         return (r * math.cos(a), r * math.sin(a))
     if pattern == "square":
@@ -137,3 +139,23 @@ def repulsion(self_id, x, y, z, peers, t, timeout, radius,
     if m > cap:
         fx, fy = fx * cap / m, fy * cap / m
     return fx, fy
+
+
+# --------------------------------------------------------------------------
+# Keeping the swarm together
+# --------------------------------------------------------------------------
+def leader_speed_scale(worst_err, e0, e1, floor):
+    """Fraction of cruise speed the leader may fly, given the worst follower slot error.
+
+    1.0 while everyone is within e0 metres of their slot, easing down to `floor`
+    at e1 metres, so the leader waits for stragglers instead of outrunning them.
+    """
+    if e1 <= e0:
+        return 1.0
+    return max(floor, min(1.0, 1.0 - (worst_err - e0) / (e1 - e0)))
+
+
+def slew_angle(current, target, max_step):
+    """Turn `current` toward `target` by at most max_step radians (shortest way round)."""
+    d = (target - current + math.pi) % (2 * math.pi) - math.pi
+    return current + max(-max_step, min(max_step, d))
