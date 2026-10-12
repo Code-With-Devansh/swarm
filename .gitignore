@@ -6,5 +6,5 @@ worlds/.*.jpg
 __pycache__/
 *.pyc
 
-# Webots backups and temp
+# Webots backups
 *.wbt.bak
