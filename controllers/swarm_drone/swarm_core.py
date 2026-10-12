@@ -11,6 +11,7 @@ import struct
 from collections import namedtuple
 
 PATTERNS = ["line", "v", "grid", "circle", "square"]
+CIRCLE_RATE = 0.08              # rad/s, orbit speed of the circle formation
 
 # id, x, y, z, vx, vy, yaw, pattern index, spacing   (little endian, no padding)
 MSG_FMT = "<B6fBf"
@@ -78,7 +79,9 @@ def offsets(pattern, sp, i, k, t):
         return (-sp * row, sp * col)
     if pattern == "circle":
         r = max(15, sp * k / (2 * math.pi) * 1.5)
-        a = 2 * math.pi * i / max(k, 1) + 0.2 * t
+        # 0.08 rad/s -> about 1.2 m/s at r=15, inside the followers' 2 m/s limit
+        # (the old 0.2 rad/s asked for 3 m/s, so they could never keep their slots)
+        a = 2 * math.pi * i / max(k, 1) + CIRCLE_RATE * t
         return (r * math.cos(a), r * math.sin(a))
     if pattern == "square":
         h = max(10, sp * k / 8)

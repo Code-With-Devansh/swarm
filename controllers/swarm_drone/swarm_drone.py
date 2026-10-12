@@ -27,10 +27,13 @@ from swarm_core import (PATTERNS, pack_state, unpack_state, roles,
 # ---------- configuration ----------
 ALT = 10.0                     # base altitude (m)
 LAYER_STEP = 1.5               # altitude gap between drones (m)
-LAYERS = 6                     # distinct altitude layers before wrapping
+LAYERS = 16                    # one altitude per drone id, up to 16 drones
 TIMEOUT = 1.0                  # s of silence before a drone counts as lost
 TX_PERIOD = 0.1                # s between broadcasts (10 Hz)
 DISCOVERY = 2.0                # s spent climbing in place, listening, before election
+CARROT_SPEED = 2.5             # m/s: max speed of the point a follower chases (see below)
+TIP_LIMIT = 1.0                # rad: roll/pitch beyond this counts as tipped
+TIP_FATAL = 1.5                # s tipped before the drone writes itself off
 FAILOVER = "fixed" not in sys.argv[1:]
 PATROL = [(40.0, 0.0), (40.0, 40.0), (0.0, 40.0), (0.0, 0.0)]   # world frame
 
@@ -92,6 +95,9 @@ leader_id = None                  # None during discovery
 led_since = 0.0                   # sim time at which I last became leader
 keys_prev = set()                 # keys down on the previous step (for edge detection)
 failed = False
+stall_since, stall_reported, tipped, tip_since = None, False, False, None
+carrot = None                     # smoothed follower target (x, y)
+last_cmd = None                   # last control commands, printed if I tip
 last_tx = -1e9
 discovery_end = robot.getTime() + DISCOVERY
 
@@ -181,8 +187,23 @@ while robot.step(dt) != -1:
             f, r = offsets(PATTERNS[pattern_idx], spacing, i, K, t)
             tx = lx + f * math.cos(cmd_yaw) + r * math.sin(cmd_yaw)
             ty = ly + f * math.sin(cmd_yaw) - r * math.cos(cmd_yaw)
+            # Chase a "carrot" that creeps toward the slot at <= CARROT_SPEED instead of
+            # the slot itself. A formation change or a leader turn can move a far slot by
+            # tens of metres in an instant (or sweep it at tens of m/s); this keeps the
+            # demand on the flight controller bounded.
+            if carrot is None:
+                carrot = (x, y)
+            step = CARROT_SPEED * dt / 1000.0
+            dx_, dy_ = tx - carrot[0], ty - carrot[1]
+            dd = math.hypot(dx_, dy_)
+            carrot = (tx, ty) if dd <= step else (carrot[0] + dx_ / dd * step,
+                                                  carrot[1] + dy_ / dd * step)
+            tx, ty = carrot
 
+    if leader_id is None or am_leader:
+        carrot = None                          # only followers use it; restart from where I am
     # ---- collision avoidance: nudge the target away from close drones ----
+    rx = ry = 0.0
     if leader_id is not None:
         radius = clamp(0.75 * spacing, 2.0, 6.0)
         rx, ry = repulsion(ID, x, y, z, peers, t, TIMEOUT, radius)
@@ -192,6 +213,37 @@ while robot.step(dt) != -1:
     # ---- flight controller (unchanged from the original) ----
     # position error -> body frame (forward / left)
     ex, ey = tx - x, ty - y
+
+    # ---- diagnostics: say so once if I stop short of my target or tip over ----
+    if leader_id is not None and math.hypot(ex, ey) > 6.0 and math.hypot(vx, vy) < 0.15:
+        stall_since = t if stall_since is None else stall_since
+        if t - stall_since > 2.0 and not stall_reported:
+            stall_reported = True
+            near = min(((math.dist((x, y, z), (p.x, p.y, p.z)), pid)
+                        for pid, p in peers.items() if t - p.t <= TIMEOUT),
+                       default=(float("nan"), 0))
+            print(f"[drone{ID}] t={t:6.1f}s STALLED at ({x:.1f},{y:.1f},{z:.1f}) "
+                  f"{math.hypot(ex, ey):.1f} m from target, leader=drone{leader_id}, "
+                  f"repulsion {math.hypot(rx, ry):.1f} m, nearest drone{near[1]} {near[0]:.1f} m")
+    else:
+        stall_since, stall_reported = None, False
+    if abs(roll) > TIP_LIMIT or abs(pitch) > TIP_LIMIT:
+        tip_since = t if tip_since is None else tip_since
+        if not tipped:
+            tipped = True
+            print(f"[drone{ID}] t={t:6.1f}s TIPPED roll={roll:.2f} pitch={pitch:.2f} "
+                  f"at ({x:.1f},{y:.1f},{z:.1f}) speed={math.hypot(vx, vy):.1f} m/s "
+                  f"leader=drone{leader_id}")
+            if last_cmd is not None:
+                print("    last cmd: pitch_dist={:.2f} roll_dist={:.2f} yaw_dist={:.2f} "
+                      "vertical={:.2f} | err fwd={:.1f} left={:.1f} | vel fwd={:.1f} left={:.1f} "
+                      "| yaw={:.2f} target_yaw={:.2f} LIM={:.1f}".format(*last_cmd))
+        if t - tip_since > TIP_FATAL:          # flipped and not recovering: go silent
+            failed = True
+            print(f"[drone{ID}] t={t:6.1f}s CRASHED, going silent so the others close up")
+    else:
+        tipped, tip_since = False, None
+
     c, s = math.cos(yaw), math.sin(yaw)
     ef, el = c * ex + s * ey, -s * ex + c * ey
     vf, vl = c * vx + s * vy, -s * vx + c * vy
@@ -205,6 +257,7 @@ while robot.step(dt) != -1:
     pitch_in = 30.0 * clamp(pitch, -1, 1) + pitch_rate + pitch_dist
     base = 68.5 + vertical
 
+    last_cmd = (pitch_dist, roll_dist, yaw_dist, vertical, ef, el, vf, vl, yaw, cmd_yaw, LIM)
     motors[0].setVelocity(base - roll_in + pitch_in - yaw_dist)    # front left
     motors[1].setVelocity(-(base + roll_in + pitch_in + yaw_dist)) # front right
     motors[2].setVelocity(-(base - roll_in - pitch_in + yaw_dist)) # rear left

@@ -27,7 +27,7 @@ WorldInfo {
     angular 0.5
   }
 }
-Viewpoint {
+DEF VIEWPOINT Viewpoint {
   orientation -0.014785258012450947 -0.009047174122208809 0.9998497611070915 3.291766868814417
   position 3.4962163682199643 2.918318070151243 1.380953523315147
   near 0.2
@@ -227,6 +227,11 @@ DEF DRONE5 Mavic2Pro {
 }
 Robot {
   name "monitor"
+  children [
+    Receiver {
+      channel 1
+    }
+  ]
   controller "monitor"
   controllerArgs ["5"]
   supervisor TRUE

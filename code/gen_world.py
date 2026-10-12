@@ -12,6 +12,7 @@ Webots before injecting, otherwise Webots may overwrite the change.
 """
 import argparse
 import pathlib
+import re
 
 
 def drone(i, gap, radio_range, fixed, slot):
@@ -35,11 +36,17 @@ def drone(i, gap, radio_range, fixed, slot):
 '''
 
 
-def monitor(n):
+def monitor(n, fixed):
+    args = f'["{n}", "fixed"]' if fixed else f'["{n}"]'
     return f'''Robot {{
   name "monitor"
+  children [
+    Receiver {{
+      channel 1
+    }}
+  ]
   controller "monitor"
-  controllerArgs ["{n}"]
+  controllerArgs {args}
   supervisor TRUE
 }}
 '''
@@ -47,7 +54,7 @@ def monitor(n):
 
 def build(n, gap, radio_range, fixed, slot):
     parts = [drone(i, gap, radio_range, fixed, slot) for i in range(1, n + 1)]
-    parts.append(monitor(n))
+    parts.append(monitor(n, fixed))
     return "".join(parts)
 
 
@@ -56,6 +63,8 @@ def inject(world_path, block):
     cut = text.find("DEF DRONE1 ")
     if cut != -1:
         text = text[:cut]
+    # the monitor needs to find the Viewpoint to move the camera
+    text = re.sub(r"^Viewpoint \{", "DEF VIEWPOINT Viewpoint {", text, flags=re.M)
     text = text.rstrip("\n") + "\n\n" + block
     with open(world_path, "w", newline="\n") as f:
         f.write(text)
@@ -79,6 +88,8 @@ def main():
                     help="also replace the swarm block inside this world file")
     args = ap.parse_args()
 
+    if args.n > 16:
+        ap.error("at most 16 drones: the controller has 16 altitude layers (LAYERS)")
     block = build(args.n, args.gap, args.radio_range, args.fixed_leader, args.slot)
     with open(args.out, "w", newline="\n") as f:
         f.write(block)

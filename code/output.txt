@@ -75,6 +75,11 @@ DEF DRONE5 Mavic2Pro {
 }
 Robot {
   name "monitor"
+  children [
+    Receiver {
+      channel 1
+    }
+  ]
   controller "monitor"
   controllerArgs ["5"]
   supervisor TRUE
