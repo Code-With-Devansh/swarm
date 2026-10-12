@@ -1,0 +1,10 @@
+# Webots auto-generated UI state and thumbnails
+worlds/.*.wbproj
+worlds/.*.jpg
+
+# Python
+__pycache__/
+*.pyc
+
+# Webots backups and temp
+*.wbt.bak

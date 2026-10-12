@@ -1,0 +1,40 @@
+DEF DRONE1 Mavic2Pro {
+    translation 0 0 0.1
+    name "drone1"
+    controller "swarm_drone"
+    controllerArgs ["5"]
+    supervisor TRUE
+    customData "line,8"
+}
+DEF DRONE2 Mavic2Pro {
+    translation -6 0 0.1
+    name "drone2"
+    controller "swarm_drone"
+    controllerArgs ["5"]
+    supervisor TRUE
+    customData "line,8"
+}
+DEF DRONE3 Mavic2Pro {
+    translation -12 0 0.1
+    name "drone3"
+    controller "swarm_drone"
+    controllerArgs ["5"]
+    supervisor TRUE
+    customData "line,8"
+}
+DEF DRONE4 Mavic2Pro {
+    translation -18 0 0.1
+    name "drone4"
+    controller "swarm_drone"
+    controllerArgs ["5"]
+    supervisor TRUE
+    customData "line,8"
+}
+DEF DRONE5 Mavic2Pro {
+    translation -24 0 0.1
+    name "drone5"
+    controller "swarm_drone"
+    controllerArgs ["5"]
+    supervisor TRUE
+    customData "line,8"
+}
