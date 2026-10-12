@@ -13,7 +13,7 @@ each other with a potential field.
 |---|---|
 | `1` `2` `3` `4` `5` | line / V / grid / circle / square |
 | `]` `[` | spacing +1 / -1 m (min 3) |
-| `X` | simulate failure of the current leader |
+| `X` | simulate failure of the current leader (a new leader ignores it for 3 s) |
 
 Console output shows leader changes (`[droneN] leader is droneM`) and, once a
 second, the minimum separation between flying drones (`[monitor] ...`).
@@ -48,6 +48,8 @@ python code/gen_world.py -n 8 --range 60 --inject worlds/mavic_2_pro.wbt
 Close the world in Webots first. `--range` limits radio range in metres (try small
 values to test lost links); `--fixed-leader` disables failover. The injector
 replaces everything from `DEF DRONE1` to the end of the file.
+The Emitter/Receiver go in the Mavic2Pro's `bodySlot`; if your PROTO version names it
+differently, pass `--slot <name>`.
 
 ## Tests
 ```bash

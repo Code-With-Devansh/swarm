@@ -50,7 +50,12 @@ for mo in motors:
     mo.setVelocity(1.0)
 
 emitter = robot.getDevice("emitter")
-receiver = robot.getDevice("receiver"); receiver.enable(dt)
+receiver = robot.getDevice("receiver")
+if emitter is None or receiver is None:
+    sys.exit(f"[drone{ID}] no emitter/receiver on this robot. Check that the world "
+             "attaches them in a slot the Mavic2Pro PROTO accepts (bodySlot) "
+             "-- see code/gen_world.py --slot")
+receiver.enable(dt)
 kb = robot.getKeyboard(); kb.enable(dt)
 KEYMASK = getattr(Keyboard, "KEY", 0xFFFF)
 
@@ -84,6 +89,8 @@ sx, sy, _ = gps.getValues()
 pattern_idx, spacing = 0, 8.0     # leader sets these, followers copy them
 wi, leader_tyaw = 0, 0.0          # waypoint index / heading target while leading
 leader_id = None                  # None during discovery
+led_since = 0.0                   # sim time at which I last became leader
+keys_prev = set()                 # keys down on the previous step (for edge detection)
 failed = False
 last_tx = -1e9
 discovery_end = robot.getTime() + DISCOVERY
@@ -111,25 +118,33 @@ while robot.step(dt) != -1:
         print(f"[drone{ID}] t={t:6.1f}s leader is drone{leader_id}"
               f"{' (me)' if am_leader else ''}")
         if am_leader:                         # take over: resume patrol from here
+            led_since = t
             wi = min(range(len(PATROL)),
                      key=lambda k: math.hypot(PATROL[k][0] - x, PATROL[k][1] - y))
             leader_tyaw = yaw
 
     # ---- keyboard (every drone drains it, only the leader acts) ----
+    # Webots reports a key on EVERY step while it is held, so act only on the
+    # step where it goes down. Otherwise a held X would also fail the drone that
+    # takes over a second later, and spacing would jump by hundreds of metres.
+    keys_now = set()
     key = kb.getKey()
     while key > 0:
-        k = key & KEYMASK
-        if am_leader:
+        keys_now.add(key & KEYMASK)
+        key = kb.getKey()
+    pressed, keys_prev = keys_now - keys_prev, keys_now
+
+    if am_leader:
+        for k in pressed:
             if ord("1") <= k <= ord("5"):
                 pattern_idx = k - ord("1")
             elif k == ord("]"):
                 spacing += 1
             elif k == ord("["):
                 spacing = max(3.0, spacing - 1)
-            elif k == ord("X"):
+            elif k == ord("X") and t - led_since >= 3.0:   # new leaders get 3 s grace
                 failed = True
                 print(f"[drone{ID}] t={t:6.1f}s simulated FAILURE")
-        key = kb.getKey()
 
     if failed:                                # dead: silent, motors off
         for mo in motors:

@@ -158,7 +158,7 @@ DEF DRONE1 Mavic2Pro {
   bodySlot [
     Emitter {
       channel 1
-      range 60
+      range 100
     }
     Receiver {
       channel 1
@@ -173,7 +173,7 @@ DEF DRONE2 Mavic2Pro {
   bodySlot [
     Emitter {
       channel 1
-      range 60
+      range 100
     }
     Receiver {
       channel 1
@@ -188,7 +188,7 @@ DEF DRONE3 Mavic2Pro {
   bodySlot [
     Emitter {
       channel 1
-      range 60
+      range 100
     }
     Receiver {
       channel 1
@@ -203,7 +203,7 @@ DEF DRONE4 Mavic2Pro {
   bodySlot [
     Emitter {
       channel 1
-      range 60
+      range 100
     }
     Receiver {
       channel 1
@@ -218,52 +218,7 @@ DEF DRONE5 Mavic2Pro {
   bodySlot [
     Emitter {
       channel 1
-      range 60
-    }
-    Receiver {
-      channel 1
-    }
-  ]
-}
-DEF DRONE6 Mavic2Pro {
-  translation -30 0 0.1
-  name "drone6"
-  controller "swarm_drone"
-  controllerArgs []
-  bodySlot [
-    Emitter {
-      channel 1
-      range 60
-    }
-    Receiver {
-      channel 1
-    }
-  ]
-}
-DEF DRONE7 Mavic2Pro {
-  translation -36 0 0.1
-  name "drone7"
-  controller "swarm_drone"
-  controllerArgs []
-  bodySlot [
-    Emitter {
-      channel 1
-      range 60
-    }
-    Receiver {
-      channel 1
-    }
-  ]
-}
-DEF DRONE8 Mavic2Pro {
-  translation -42 0 0.1
-  name "drone8"
-  controller "swarm_drone"
-  controllerArgs []
-  bodySlot [
-    Emitter {
-      channel 1
-      range 60
+      range 100
     }
     Receiver {
       channel 1
@@ -273,6 +228,6 @@ DEF DRONE8 Mavic2Pro {
 Robot {
   name "monitor"
   controller "monitor"
-  controllerArgs ["8"]
+  controllerArgs ["5"]
   supervisor TRUE
 }

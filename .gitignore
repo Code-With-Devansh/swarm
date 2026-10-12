@@ -8,3 +8,4 @@ __pycache__/
 
 # Webots backups
 *.wbt.bak
+output.txt

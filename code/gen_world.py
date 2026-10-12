@@ -14,7 +14,7 @@ import argparse
 import pathlib
 
 
-def drone(i, gap, radio_range, fixed):
+def drone(i, gap, radio_range, fixed, slot):
     x = -gap * (i - 1) + 0.0                      # + 0.0 avoids printing "-0"
     ctrl_args = '["fixed"]' if fixed else "[]"
     return f'''DEF DRONE{i} Mavic2Pro {{
@@ -22,7 +22,7 @@ def drone(i, gap, radio_range, fixed):
   name "drone{i}"
   controller "swarm_drone"
   controllerArgs {ctrl_args}
-  bodySlot [
+  {slot} [
     Emitter {{
       channel 1
       range {radio_range:g}
@@ -45,8 +45,8 @@ def monitor(n):
 '''
 
 
-def build(n, gap, radio_range, fixed):
-    parts = [drone(i, gap, radio_range, fixed) for i in range(1, n + 1)]
+def build(n, gap, radio_range, fixed, slot):
+    parts = [drone(i, gap, radio_range, fixed, slot) for i in range(1, n + 1)]
     parts.append(monitor(n))
     return "".join(parts)
 
@@ -72,12 +72,14 @@ def main():
                     help="emitter range in metres; lower it to test lost links")
     ap.add_argument("--fixed-leader", action="store_true",
                     help="disable failover: drone1 is always the leader")
+    ap.add_argument("--slot", default="bodySlot",
+                    help="Mavic2Pro field that holds the Emitter/Receiver (default bodySlot)")
     ap.add_argument("--out", default=str(here / "output.txt"))
     ap.add_argument("--inject", metavar="WORLD.wbt",
                     help="also replace the swarm block inside this world file")
     args = ap.parse_args()
 
-    block = build(args.n, args.gap, args.radio_range, args.fixed_leader)
+    block = build(args.n, args.gap, args.radio_range, args.fixed_leader, args.slot)
     with open(args.out, "w", newline="\n") as f:
         f.write(block)
     print(f"wrote {args.out}")
