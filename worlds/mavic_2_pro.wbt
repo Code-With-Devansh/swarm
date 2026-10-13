@@ -158,10 +158,28 @@ DEF DRONE1 Mavic2Pro {
   bodySlot [
     Emitter {
       channel 1
-      range 100
+      range 300
     }
     Receiver {
       channel 1
+    }
+    Transform {
+      translation 0 0 0.8
+      children [
+        Shape {
+          appearance DEF BEACON1 PBRAppearance {
+            baseColor 0.1 0.7 1
+            emissiveColor 0.1 0.7 1
+            emissiveIntensity 1
+            roughness 1
+            metalness 0
+          }
+          geometry Sphere {
+            radius 0.7
+            subdivision 2
+          }
+        }
+      ]
     }
   ]
 }
@@ -173,10 +191,28 @@ DEF DRONE2 Mavic2Pro {
   bodySlot [
     Emitter {
       channel 1
-      range 100
+      range 300
     }
     Receiver {
       channel 1
+    }
+    Transform {
+      translation 0 0 0.8
+      children [
+        Shape {
+          appearance DEF BEACON2 PBRAppearance {
+            baseColor 0.1 0.7 1
+            emissiveColor 0.1 0.7 1
+            emissiveIntensity 1
+            roughness 1
+            metalness 0
+          }
+          geometry Sphere {
+            radius 0.7
+            subdivision 2
+          }
+        }
+      ]
     }
   ]
 }
@@ -188,10 +224,28 @@ DEF DRONE3 Mavic2Pro {
   bodySlot [
     Emitter {
       channel 1
-      range 100
+      range 300
     }
     Receiver {
       channel 1
+    }
+    Transform {
+      translation 0 0 0.8
+      children [
+        Shape {
+          appearance DEF BEACON3 PBRAppearance {
+            baseColor 0.1 0.7 1
+            emissiveColor 0.1 0.7 1
+            emissiveIntensity 1
+            roughness 1
+            metalness 0
+          }
+          geometry Sphere {
+            radius 0.7
+            subdivision 2
+          }
+        }
+      ]
     }
   ]
 }
@@ -203,10 +257,28 @@ DEF DRONE4 Mavic2Pro {
   bodySlot [
     Emitter {
       channel 1
-      range 100
+      range 300
     }
     Receiver {
       channel 1
+    }
+    Transform {
+      translation 0 0 0.8
+      children [
+        Shape {
+          appearance DEF BEACON4 PBRAppearance {
+            baseColor 0.1 0.7 1
+            emissiveColor 0.1 0.7 1
+            emissiveIntensity 1
+            roughness 1
+            metalness 0
+          }
+          geometry Sphere {
+            radius 0.7
+            subdivision 2
+          }
+        }
+      ]
     }
   ]
 }
@@ -218,10 +290,28 @@ DEF DRONE5 Mavic2Pro {
   bodySlot [
     Emitter {
       channel 1
-      range 100
+      range 300
     }
     Receiver {
       channel 1
+    }
+    Transform {
+      translation 0 0 0.8
+      children [
+        Shape {
+          appearance DEF BEACON5 PBRAppearance {
+            baseColor 0.1 0.7 1
+            emissiveColor 0.1 0.7 1
+            emissiveIntensity 1
+            roughness 1
+            metalness 0
+          }
+          geometry Sphere {
+            radius 0.7
+            subdivision 2
+          }
+        }
+      ]
     }
   ]
 }

@@ -159,3 +159,43 @@ def slew_angle(current, target, max_step):
     """Turn `current` toward `target` by at most max_step radians (shortest way round)."""
     d = (target - current + math.pi) % (2 * math.pi) - math.pi
     return current + max(-max_step, min(max_step, d))
+
+
+# --------------------------------------------------------------------------
+# Camera helper (used by the monitor)
+# --------------------------------------------------------------------------
+def look_at(pos, target, up=(0.0, 0.0, 1.0)):
+    """Webots Viewpoint `orientation` (axis x, y, z, angle) that looks from pos at target.
+
+    A Webots (ENU) viewpoint looks along its local +x axis with local +z up, which is
+    what the project's own world file uses.
+    """
+    f = [target[i] - pos[i] for i in range(3)]
+    n = math.sqrt(sum(c * c for c in f)) or 1.0
+    f = [c / n for c in f]
+    left = [up[1] * f[2] - up[2] * f[1], up[2] * f[0] - up[0] * f[2], up[0] * f[1] - up[1] * f[0]]
+    n = math.sqrt(sum(c * c for c in left))
+    if n < 1e-6:                               # looking straight along `up`: pick another up
+        return look_at(pos, target, (0.0, 1.0, 0.0))
+    left = [c / n for c in left]
+    u = [f[1] * left[2] - f[2] * left[1], f[2] * left[0] - f[0] * left[2], f[0] * left[1] - f[1] * left[0]]
+    # rotation matrix with columns f, left, u  ->  quaternion  ->  axis/angle
+    m = [[f[0], left[0], u[0]], [f[1], left[1], u[1]], [f[2], left[2], u[2]]]
+    tr = m[0][0] + m[1][1] + m[2][2]
+    if tr > 0:
+        sq = math.sqrt(tr + 1.0) * 2
+        w, x, y, z = 0.25 * sq, (m[2][1] - m[1][2]) / sq, (m[0][2] - m[2][0]) / sq, (m[1][0] - m[0][1]) / sq
+    elif m[0][0] > m[1][1] and m[0][0] > m[2][2]:
+        sq = math.sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]) * 2
+        w, x, y, z = (m[2][1] - m[1][2]) / sq, 0.25 * sq, (m[0][1] + m[1][0]) / sq, (m[0][2] + m[2][0]) / sq
+    elif m[1][1] > m[2][2]:
+        sq = math.sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]) * 2
+        w, x, y, z = (m[0][2] - m[2][0]) / sq, (m[0][1] + m[1][0]) / sq, 0.25 * sq, (m[1][2] + m[2][1]) / sq
+    else:
+        sq = math.sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]) * 2
+        w, x, y, z = (m[1][0] - m[0][1]) / sq, (m[0][2] + m[2][0]) / sq, (m[1][2] + m[2][1]) / sq, 0.25 * sq
+    angle = 2 * math.acos(max(-1.0, min(1.0, w)))
+    s_ = math.sqrt(max(0.0, 1.0 - w * w))
+    if s_ < 1e-9:
+        return (0.0, 0.0, 1.0, 0.0)
+    return (x / s_, y / s_, z / s_, angle)

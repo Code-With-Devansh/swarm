@@ -8,7 +8,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]
                        / "controllers" / "swarm_drone"))
 
 from swarm_core import (Peer, pack_state, unpack_state, MSG_SIZE, roles,
-                        follower_slot, offsets, repulsion, leader_speed_scale, slew_angle)
+                        follower_slot, offsets, repulsion, leader_speed_scale, slew_angle, look_at)
 
 
 def peer(t=0.0, x=0.0, y=0.0, z=10.0, vx=0.0, vy=0.0, yaw=0.0, pat=0, sp=8.0, err=0.0):
@@ -55,6 +55,44 @@ class KeepingTogether(unittest.TestCase):
     def test_slew_takes_short_way_round(self):
         a = slew_angle(math.pi - 0.05, -math.pi + 0.05, 0.1)   # 0.1 rad apart across +-pi
         self.assertAlmostEqual(a, math.pi + 0.05)
+
+
+def rotate(axis_angle, v):
+    """Rotate vector v by a Webots axis-angle rotation (Rodrigues)."""
+    ax, ay, az, a = axis_angle
+    n = math.sqrt(ax * ax + ay * ay + az * az) or 1.0
+    k = (ax / n, ay / n, az / n)
+    c, s = math.cos(a), math.sin(a)
+    dot = sum(k[i] * v[i] for i in range(3))
+    cross = (k[1] * v[2] - k[2] * v[1], k[2] * v[0] - k[0] * v[2], k[0] * v[1] - k[1] * v[0])
+    return tuple(v[i] * c + cross[i] * s + k[i] * dot * (1 - c) for i in range(3))
+
+
+class Camera(unittest.TestCase):
+    def check(self, pos, target):
+        o = look_at(pos, target)
+        fwd = rotate(o, (1.0, 0.0, 0.0))
+        want = [target[i] - pos[i] for i in range(3)]
+        n = math.sqrt(sum(c * c for c in want))
+        for i in range(3):
+            self.assertAlmostEqual(fwd[i], want[i] / n, places=6)
+        self.assertGreaterEqual(rotate(o, (0.0, 0.0, 1.0))[2], -1e-9)     # camera is not upside down
+
+    def test_oblique(self):
+        self.check((20, -120, 60), (20, 15, 12))
+
+    def test_various_directions(self):
+        for pos in [(0, 0, 50), (-40, 30, 10), (60, 60, 20), (-30, -30, 18)]:
+            self.check(pos, (5, 5, 5))
+
+    def test_straight_down(self):
+        self.check((15, 15, 120), (15, 15, 0))
+
+    def test_matches_the_world_files_own_camera(self):
+        # world viewpoint: looks along roughly -x toward the drone from (3.5, 2.9, 1.4)
+        o = (-0.014785258, -0.009047174, 0.99984976, 3.29176687)
+        fwd = rotate(o, (1.0, 0.0, 0.0))
+        self.assertLess(fwd[0], -0.9)
 
 
 class Election(unittest.TestCase):

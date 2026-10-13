@@ -18,11 +18,12 @@ Keyboard (focus the 3D view; only the current leader reacts):
 """
 import math
 import sys
+from collections import deque
 
 from controller import Robot, Keyboard
 
 from swarm_core import (PATTERNS, pack_state, unpack_state, roles, follower_slot,
-                        offsets, repulsion, leader_speed_scale, slew_angle)
+                        offsets, repulsion, leader_speed_scale, slew_angle, live_ids)
 
 # ---------- configuration ----------
 ALT = 10.0                     # base altitude (m)
@@ -36,6 +37,8 @@ FOLLOWER_VMAX = 3.0            # m/s: follower speed cap (in practice limited by
 FORM_RATE = 0.2                # rad/s: max rotation rate of the formation heading
 WAIT_E0, WAIT_E1, WAIT_MIN = 4.0, 14.0, 0.15   # leader waits when a follower is >E0 m off its slot
 CARROT_SPEED = 2.5             # m/s: max speed of the point a follower chases (see below)
+CARROT_LEAD = 4.0              # m: the carrot never gets further than this from the drone
+RECOVER_TILT = 0.6             # rad: beyond this, drop all manoeuvre demands and just level out
 TIP_LIMIT = 1.0                # rad: roll/pitch beyond this counts as tipped
 TIP_FATAL = 1.5                # s tipped before the drone writes itself off
 FAILOVER = "fixed" not in sys.argv[1:]
@@ -103,6 +106,10 @@ keys_prev = set()                 # keys down on the previous step (for edge det
 failed = False
 stall_since, stall_reported, tipped, tip_since = None, False, False, None
 carrot = None                     # smoothed follower target (x, y)
+airborne = False                  # has been above 5 m (so being near the ground means it fell)
+known = None                      # set of peers I could hear last step (for lost/regained contact)
+last_tip_print, last_dump = -1e9, -1e9
+blackbox, bb_tick = deque(maxlen=30), 0   # ~1.2 s of control history, dumped before a flip
 last_cmd = None                   # last control commands, printed if I tip
 last_tx = -1e9
 discovery_end = robot.getTime() + DISCOVERY
@@ -125,6 +132,14 @@ while robot.step(dt) != -1:
         leader_id, followers = roles(ID, peers, t, TIMEOUT,
                                      None if FAILOVER else 1)
     am_leader = leader_id == ID
+    if t >= discovery_end:                    # report radio links appearing / disappearing
+        heard_now = set(live_ids(ID, peers, t, TIMEOUT)) - {ID}
+        if known is not None:
+            if known - heard_now:
+                print(f"[drone{ID}] t={t:6.1f}s lost contact with drone{sorted(known - heard_now)}")
+            if heard_now - known:
+                print(f"[drone{ID}] t={t:6.1f}s regained contact with drone{sorted(heard_now - known)}")
+        known = heard_now
 
     if leader_id != prev_leader and leader_id is not None:
         print(f"[drone{ID}] t={t:6.1f}s leader is drone{leader_id}"
@@ -209,6 +224,10 @@ while robot.step(dt) != -1:
             dd = math.hypot(dx_, dy_)
             carrot = (tx, ty) if dd <= step else (carrot[0] + dx_ / dd * step,
                                                   carrot[1] + dy_ / dd * step)
+            lead = math.hypot(carrot[0] - x, carrot[1] - y)
+            if lead > CARROT_LEAD:                 # a drone that can't keep up must not be
+                k_ = CARROT_LEAD / lead            # asked for ever-larger errors
+                carrot = (x + (carrot[0] - x) * k_, y + (carrot[1] - y) * k_)
             tx, ty = carrot
 
     if leader_id is None or am_leader:
@@ -248,6 +267,8 @@ while robot.step(dt) != -1:
         tip_since = t if tip_since is None else tip_since
         if not tipped:
             tipped = True
+        if t - last_tip_print > 5.0:               # the wobble re-crosses 1 rad every ~0.25 s
+            last_tip_print = t
             print(f"[drone{ID}] t={t:6.1f}s TIPPED roll={roll:.2f} pitch={pitch:.2f} "
                   f"at ({x:.1f},{y:.1f},{z:.1f}) speed={math.hypot(vx, vy):.1f} m/s "
                   f"leader=drone{leader_id}")
@@ -260,6 +281,11 @@ while robot.step(dt) != -1:
             print(f"[drone{ID}] t={t:6.1f}s CRASHED, going silent so the others close up")
     else:
         tipped, tip_since = False, None
+    if z > 5.0:
+        airborne = True
+    if airborne and z < 1.5 and not failed:       # fell out of the sky (wobbling can dip under 1 rad)
+        failed = True
+        print(f"[drone{ID}] t={t:6.1f}s CRASHED (z={z:.1f} m after flying), going silent")
 
     c, s = math.cos(yaw), math.sin(yaw)
     ef, el = c * ex + s * ey, -s * ex + c * ey
@@ -275,6 +301,9 @@ while robot.step(dt) != -1:
     pitch_dist = -clamp(1.5 * (vdf - vf), -LIM, LIM)           # negative = forward
     roll_dist = clamp(1.5 * (vdl - vl), -LIM / 2, LIM / 2)     # positive = left
     yaw_dist = clamp(2.0 * wrap(cmd_yaw - yaw), -1.3, 1.3)
+    tilt = max(abs(roll), abs(pitch))
+    if tilt > RECOVER_TILT:                    # badly tilted: stop manoeuvring, just level out
+        pitch_dist = roll_dist = yaw_dist = 0.0
     vertical = 3.0 * clamp(tz - z + 0.6, -1.0, 1.0) ** 3
 
     roll_in = 50.0 * clamp(roll, -1, 1) + roll_rate + roll_dist
@@ -282,6 +311,16 @@ while robot.step(dt) != -1:
     base = 68.5 + vertical
 
     last_cmd = (pitch_dist, roll_dist, yaw_dist, vertical, ef, el, vf, vl, yaw, cmd_yaw, LIM)
+    bb_tick += 1
+    if bb_tick % 5 == 0:                       # flight recorder: one sample per 40 ms
+        blackbox.append((t, roll, pitch, roll_rate, pitch_rate, pitch_dist, roll_dist,
+                         yaw_dist, vertical, z, math.hypot(vx, vy)))
+    if tilt > RECOVER_TILT and t - last_dump > 10.0 and len(blackbox) >= 10:
+        last_dump = t
+        print(f"[drone{ID}] t={t:6.1f}s tilt {tilt:.2f} rad - what led up to it "
+              f"(t, roll, pitch, roll_rate, pitch_rate, pitch_d, roll_d, yaw_d, vert, z, speed):")
+        for row in list(blackbox)[::3]:
+            print("    " + " ".join(f"{v:7.2f}" for v in row))
     motors[0].setVelocity(base - roll_in + pitch_in - yaw_dist)    # front left
     motors[1].setVelocity(-(base + roll_in + pitch_in + yaw_dist)) # front right
     motors[2].setVelocity(-(base - roll_in - pitch_in + yaw_dist)) # rear left
