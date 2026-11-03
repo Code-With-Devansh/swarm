@@ -2,7 +2,7 @@ DEF DRONE1 Mavic2Pro {
   translation 0 0 0.1
   name "drone1"
   controller "swarm_drone"
-  controllerArgs []
+  controllerArgs ["course", "alt=4", "speed=1"]
   bodySlot [
     Emitter {
       channel 1
@@ -10,6 +10,21 @@ DEF DRONE1 Mavic2Pro {
     }
     Receiver {
       channel 1
+    }
+    Lidar {
+      translation 0 0 0.05
+      name "lidar"
+      horizontalResolution 360
+      fieldOfView 6.2832
+      verticalFieldOfView 0.35
+      numberOfLayers 5
+      minRange 0.5
+      maxRange 40
+    }
+    Display {
+      name "map"
+      width 480
+      height 480
     }
     Transform {
       translation 0 0 0.8
@@ -35,7 +50,7 @@ DEF DRONE2 Mavic2Pro {
   translation -6 0 0.1
   name "drone2"
   controller "swarm_drone"
-  controllerArgs []
+  controllerArgs ["course", "alt=4", "speed=1"]
   bodySlot [
     Emitter {
       channel 1
@@ -43,6 +58,21 @@ DEF DRONE2 Mavic2Pro {
     }
     Receiver {
       channel 1
+    }
+    Lidar {
+      translation 0 0 0.05
+      name "lidar"
+      horizontalResolution 360
+      fieldOfView 6.2832
+      verticalFieldOfView 0.35
+      numberOfLayers 5
+      minRange 0.5
+      maxRange 40
+    }
+    Display {
+      name "map"
+      width 480
+      height 480
     }
     Transform {
       translation 0 0 0.8
@@ -68,7 +98,7 @@ DEF DRONE3 Mavic2Pro {
   translation -12 0 0.1
   name "drone3"
   controller "swarm_drone"
-  controllerArgs []
+  controllerArgs ["course", "alt=4", "speed=1"]
   bodySlot [
     Emitter {
       channel 1
@@ -76,6 +106,21 @@ DEF DRONE3 Mavic2Pro {
     }
     Receiver {
       channel 1
+    }
+    Lidar {
+      translation 0 0 0.05
+      name "lidar"
+      horizontalResolution 360
+      fieldOfView 6.2832
+      verticalFieldOfView 0.35
+      numberOfLayers 5
+      minRange 0.5
+      maxRange 40
+    }
+    Display {
+      name "map"
+      width 480
+      height 480
     }
     Transform {
       translation 0 0 0.8
@@ -101,7 +146,7 @@ DEF DRONE4 Mavic2Pro {
   translation -18 0 0.1
   name "drone4"
   controller "swarm_drone"
-  controllerArgs []
+  controllerArgs ["course", "alt=4", "speed=1"]
   bodySlot [
     Emitter {
       channel 1
@@ -109,6 +154,21 @@ DEF DRONE4 Mavic2Pro {
     }
     Receiver {
       channel 1
+    }
+    Lidar {
+      translation 0 0 0.05
+      name "lidar"
+      horizontalResolution 360
+      fieldOfView 6.2832
+      verticalFieldOfView 0.35
+      numberOfLayers 5
+      minRange 0.5
+      maxRange 40
+    }
+    Display {
+      name "map"
+      width 480
+      height 480
     }
     Transform {
       translation 0 0 0.8
@@ -134,7 +194,7 @@ DEF DRONE5 Mavic2Pro {
   translation -24 0 0.1
   name "drone5"
   controller "swarm_drone"
-  controllerArgs []
+  controllerArgs ["course", "alt=4", "speed=1"]
   bodySlot [
     Emitter {
       channel 1
@@ -142,6 +202,21 @@ DEF DRONE5 Mavic2Pro {
     }
     Receiver {
       channel 1
+    }
+    Lidar {
+      translation 0 0 0.05
+      name "lidar"
+      horizontalResolution 360
+      fieldOfView 6.2832
+      verticalFieldOfView 0.35
+      numberOfLayers 5
+      minRange 0.5
+      maxRange 40
+    }
+    Display {
+      name "map"
+      width 480
+      height 480
     }
     Transform {
       translation 0 0 0.8

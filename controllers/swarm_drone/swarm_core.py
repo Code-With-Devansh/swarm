@@ -5,6 +5,7 @@ Contains
   * leader election and follower slot assignment (roles / follower_slot)
   * formation slot offsets (offsets)
   * collision-avoidance repulsion (repulsion)
+  * reactive repulsion from lidar points (obstacle_repulsion)
 """
 import math
 import struct
@@ -139,6 +140,35 @@ def repulsion(self_id, x, y, z, peers, t, timeout, radius,
     if m > cap:
         fx, fy = fx * cap / m, fy * cap / m
     return fx, fy
+
+
+def obstacle_repulsion(points, yaw, radius, k=3.0, cap=3.0, tangent=0.3):
+    """World-frame target offset (fx, fy) pushing me away from lidar points.
+
+    points : iterable of (x, y) in the LEVEL body frame (x forward, y left)
+    yaw    : my heading, to rotate the result into the world frame
+    Only points closer than `radius` count. Like `repulsion`, a small tangential term
+    makes a drone slide around an obstacle it faces head-on instead of backing straight up.
+    This is the fast reactive layer; the leader's A* does the actual routing.
+    """
+    fx = fy = 0.0
+    n = 0
+    for px, py in points:
+        d = math.hypot(px, py)
+        if d >= radius or d < 1e-3:
+            continue
+        ux, uy = -px / d, -py / d                      # away from the point (body frame)
+        mag = k * (1.0 / max(d, 0.5) - 1.0 / radius)
+        fx += mag * (ux - tangent * uy)
+        fy += mag * (uy + tangent * ux)
+        n += 1
+    if n:                                              # many points on one wall must not add up
+        fx, fy = fx / math.sqrt(n), fy / math.sqrt(n)
+    m = math.hypot(fx, fy)
+    if m > cap:
+        fx, fy = fx * cap / m, fy * cap / m
+    c, s = math.cos(yaw), math.sin(yaw)
+    return c * fx - s * fy, s * fx + c * fy
 
 
 # --------------------------------------------------------------------------

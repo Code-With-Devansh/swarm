@@ -163,6 +163,21 @@ DEF DRONE1 Mavic2Pro {
     Receiver {
       channel 1
     }
+    Lidar {
+      translation 0 0 0.05
+      name "lidar"
+      horizontalResolution 360
+      fieldOfView 6.2832
+      verticalFieldOfView 0.35
+      numberOfLayers 5
+      minRange 0.5
+      maxRange 40
+    }
+    Display {
+      name "map"
+      width 480
+      height 480
+    }
     Transform {
       translation 0 0 0.8
       children [
@@ -195,6 +210,21 @@ DEF DRONE2 Mavic2Pro {
     }
     Receiver {
       channel 1
+    }
+    Lidar {
+      translation 0 0 0.05
+      name "lidar"
+      horizontalResolution 360
+      fieldOfView 6.2832
+      verticalFieldOfView 0.35
+      numberOfLayers 5
+      minRange 0.5
+      maxRange 40
+    }
+    Display {
+      name "map"
+      width 480
+      height 480
     }
     Transform {
       translation 0 0 0.8
@@ -229,6 +259,21 @@ DEF DRONE3 Mavic2Pro {
     Receiver {
       channel 1
     }
+    Lidar {
+      translation 0 0 0.05
+      name "lidar"
+      horizontalResolution 360
+      fieldOfView 6.2832
+      verticalFieldOfView 0.35
+      numberOfLayers 5
+      minRange 0.5
+      maxRange 40
+    }
+    Display {
+      name "map"
+      width 480
+      height 480
+    }
     Transform {
       translation 0 0 0.8
       children [
@@ -262,6 +307,21 @@ DEF DRONE4 Mavic2Pro {
     Receiver {
       channel 1
     }
+    Lidar {
+      translation 0 0 0.05
+      name "lidar"
+      horizontalResolution 360
+      fieldOfView 6.2832
+      verticalFieldOfView 0.35
+      numberOfLayers 5
+      minRange 0.5
+      maxRange 40
+    }
+    Display {
+      name "map"
+      width 480
+      height 480
+    }
     Transform {
       translation 0 0 0.8
       children [
@@ -294,6 +354,21 @@ DEF DRONE5 Mavic2Pro {
     }
     Receiver {
       channel 1
+    }
+    Lidar {
+      translation 0 0 0.05
+      name "lidar"
+      horizontalResolution 360
+      fieldOfView 6.2832
+      verticalFieldOfView 0.35
+      numberOfLayers 5
+      minRange 0.5
+      maxRange 40
+    }
+    Display {
+      name "map"
+      width 480
+      height 480
     }
     Transform {
       translation 0 0 0.8
