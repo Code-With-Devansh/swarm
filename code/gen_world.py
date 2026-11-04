@@ -15,9 +15,30 @@ import pathlib
 import re
 
 
-def drone(i, gap, radio_range, fixed, slot, beacon):
+def drone(i, gap, radio_range, fixed, slot, beacon, lidar_layers=5, ctrl_extra=()):
     x = -gap * (i - 1) + 0.0                      # + 0.0 avoids printing "-0"
-    ctrl_args = '["fixed"]' if fixed else "[]"
+    args_list = (["fixed"] if fixed else []) + list(ctrl_extra)
+    ctrl_args = "[" + ", ".join(f'"{a}"' for a in args_list) + "]"
+    lidar_node = ""
+    if lidar_layers > 0:
+        # 360 deg scan, a few layers so the drone can see a tree through its own pitch/roll.
+        # Obstacles need a boundingObject to be visible to this sensor.
+        lidar_node = f'''
+    Lidar {{
+      translation 0 0 0.05
+      name \"lidar\"
+      horizontalResolution 360
+      fieldOfView 6.2832
+      verticalFieldOfView 0.35
+      numberOfLayers {lidar_layers}
+      minRange 0.5
+      maxRange 40
+    }}
+    Display {{
+      name \"map\"
+      width 480
+      height 480
+    }}'''
     beacon_node = ""
     if beacon > 0:
         # visual only (no boundingObject, no physics): a glowing ball above the drone so it
@@ -53,7 +74,7 @@ def drone(i, gap, radio_range, fixed, slot, beacon):
     }}
     Receiver {{
       channel 1
-    }}{beacon_node}
+    }}{lidar_node}{beacon_node}
   ]
 }}
 '''
@@ -75,8 +96,8 @@ def monitor(n, fixed):
 '''
 
 
-def build(n, gap, radio_range, fixed, slot, beacon):
-    parts = [drone(i, gap, radio_range, fixed, slot, beacon) for i in range(1, n + 1)]
+def build(n, gap, radio_range, fixed, slot, beacon, lidar_layers=5, ctrl_extra=()):
+    parts = [drone(i, gap, radio_range, fixed, slot, beacon, lidar_layers, ctrl_extra) for i in range(1, n + 1)]
     parts.append(monitor(n, fixed))
     return "".join(parts)
 
@@ -108,6 +129,14 @@ def main():
                     help="Mavic2Pro field that holds the Emitter/Receiver (default bodySlot)")
     ap.add_argument("--beacon", type=float, default=0.7,
                     help="radius in metres of the glowing ball above each drone (0 = none)")
+    ap.add_argument("--lidar-layers", type=int, default=5,
+                    help="lidar layers per drone (default 5; 0 = no lidar, no obstacle avoidance)")
+    ap.add_argument("--course", action="store_true",
+                    help="fly a route straight through the pine trees (controllerArgs 'course')")
+    ap.add_argument("--alt", type=float, default=None,
+                    help="base flight altitude in metres (controllerArgs 'alt=N'); lower it so the lidar plane meets the trees")
+    ap.add_argument("--speed", type=float, default=None,
+                    help="leader cruise speed in m/s (controllerArgs 'speed=N'); default 0.5, try 1.0 for the course")
     ap.add_argument("--out", default=str(here / "output.txt"))
     ap.add_argument("--inject", metavar="WORLD.wbt",
                     help="also replace the swarm block inside this world file")
@@ -115,7 +144,9 @@ def main():
 
     if args.n > 16:
         ap.error("at most 16 drones: the controller has 16 altitude layers (LAYERS)")
-    block = build(args.n, args.gap, args.radio_range, args.fixed_leader, args.slot, args.beacon)
+    extra = (["course"] if args.course else []) + ([f"alt={args.alt:g}"] if args.alt is not None else []) + ([f"speed={args.speed:g}"] if args.speed is not None else [])
+    block = build(args.n, args.gap, args.radio_range, args.fixed_leader, args.slot, args.beacon,
+                  args.lidar_layers, extra)
     with open(args.out, "w", newline="\n") as f:
         f.write(block)
     print(f"wrote {args.out}")

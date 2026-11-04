@@ -9,7 +9,10 @@ broadcasts) plus their own GPS / IMU / gyro.
     (controllerArgs ["fixed"] disables this: drone1 is always leader.)
   * Leader: patrols a square and reads the keyboard.
   * Followers: fly to their slot in the leader's formation.
-  * Everyone: potential-field repulsion from nearby drones.
+  * Everyone: potential-field repulsion from nearby drones, and from obstacles seen by
+    the lidar (if the drone has one).
+  * Leader with a lidar: 2D SLAM + occupancy grid + A* route around trees / windmills
+    (leader_nav.py). Followers do not map. See README, "Obstacle avoidance".
 
 Keyboard (focus the 3D view; only the current leader reacts):
     1..5   line / v / grid / circle / square
@@ -20,19 +23,29 @@ import math
 import sys
 from collections import deque
 
-from controller import Robot, Keyboard
+from controller import Robot, Keyboard, Display
 
 from swarm_core import (PATTERNS, pack_state, unpack_state, roles, follower_slot,
-                        offsets, repulsion, leader_speed_scale, slew_angle, live_ids)
+                        offsets, repulsion, leader_speed_scale, slew_angle, live_ids,
+                        obstacle_repulsion, predict)
+try:                                   # the lidar stack needs numpy; the swarm still flies without it
+    from lidar_utils import beam_angles, level_points, mask_peers
+    from leader_nav import LeaderNav
+    from map_view import MapView
+    HAVE_NUMPY = True
+except ImportError as e:
+    print(f"[swarm_drone] lidar stack disabled ({e}); run: pip install numpy")
+    HAVE_NUMPY = False
 
 # ---------- configuration ----------
-ALT = 10.0                     # base altitude (m)
+ARGS = sys.argv[1:]
+ALT = next((float(a.split("=")[1]) for a in ARGS if a.startswith("alt=")), 10.0)   # base altitude (m); controllerArgs ["alt=4"]
 LAYER_STEP = 1.5               # altitude gap between drones (m)
 LAYERS = 16                    # one altitude per drone id, up to 16 drones
 TIMEOUT = 1.0                  # s of silence before a drone counts as lost
 TX_PERIOD = 0.1                # s between broadcasts (10 Hz)
 DISCOVERY = 2.0                # s spent climbing in place, listening, before election
-LEADER_VMAX = 0.5              # m/s: leader cruise speed (a real cap, not just a tilt limit)
+LEADER_VMAX = next((float(a.split("=")[1]) for a in ARGS if a.startswith("speed=")), 0.5)   # m/s: leader cruise speed; controllerArgs ["speed=1"]
 FOLLOWER_VMAX = 3.0            # m/s: follower speed cap (in practice limited by tilt/drag)
 FORM_RATE = 0.2                # rad/s: max rotation rate of the formation heading
 WAIT_E0, WAIT_E1, WAIT_MIN = 4.0, 14.0, 0.15   # leader waits when a follower is >E0 m off its slot
@@ -41,8 +54,19 @@ CARROT_LEAD = 4.0              # m: the carrot never gets further than this from
 RECOVER_TILT = 0.6             # rad: beyond this, drop all manoeuvre demands and just level out
 TIP_LIMIT = 1.0                # rad: roll/pitch beyond this counts as tipped
 TIP_FATAL = 1.5                # s tipped before the drone writes itself off
-FAILOVER = "fixed" not in sys.argv[1:]
+FAILOVER = "fixed" not in ARGS
+NOAVOID = "noavoid" in ARGS     # A/B demo: SLAM still maps, but neither A* nor the reactive push steer the drone
+LIDAR_PERIOD = 0.1             # s between scans processed (10 Hz)
+OBST_RADIUS = 4.0              # m: reactive obstacle repulsion starts here
+NAV_RADIUS = 2.0               # m: A* keeps the leader this far from mapped obstacles
+PEER_MASK = 1.8                # m: lidar points this close to another drone are not obstacles
+GROUND_MARGIN = 0.6            # m: lidar returns lower than this above the floor are the floor, not obstacles
+LOOKAHEAD = 6.0                # m: how far along the A* path the leader aims
 PATROL = [(40.0, 0.0), (40.0, 40.0), (0.0, 40.0), (0.0, 0.0)]   # world frame
+if "course" in ARGS:                  # controllerArgs ["course"]: a route straight through the pines
+    # every long leg is aimed through the centre of a pine: (-9.4,14.0) and (-14.3,14.6) on the first,
+    # (-26.6,-7.2) on the second, (-14.0,-14.5) on the third
+    PATROL = [(-5.0, 14.0), (-35.0, 14.5), (-24.0, -14.0), (-5.0, -14.5), (0.0, 0.0)]
 
 robot = Robot()
 dt = int(robot.getBasicTimeStep())
@@ -67,6 +91,21 @@ if emitter is None or receiver is None:
              "-- see code/gen_world.py --slot")
 receiver.enable(dt)
 kb = robot.getKeyboard(); kb.enable(dt)
+
+lidar = robot.getDevice("lidar") if HAVE_NUMPY else None
+if lidar is not None:
+    lidar.enable(int(LIDAR_PERIOD * 1000))
+    L_AZ, L_EL = beam_angles(lidar.getHorizontalResolution(), lidar.getNumberOfLayers(),
+                             lidar.getFov(), lidar.getVerticalFov())
+    L_MIN, L_MAX = max(lidar.getMinRange(), 0.6), lidar.getMaxRange()
+    nav = LeaderNav(max_range=L_MAX, radius=NAV_RADIUS, lookahead=LOOKAHEAD)
+else:
+    nav = None
+    if HAVE_NUMPY:
+        print(f"[drone{ID}] no lidar on this robot: obstacle avoidance off (see gen_world.py --lidar)")
+map_disp = robot.getDevice("map") if HAVE_NUMPY else None
+map_view = MapView(map_disp, Display.RGBA) if map_disp is not None else None
+last_map = -1e9
 KEYMASK = getattr(Keyboard, "KEY", 0xFFFF)
 
 
@@ -113,6 +152,9 @@ blackbox, bb_tick = deque(maxlen=30), 0   # ~1.2 s of control history, dumped be
 last_cmd = None                   # last control commands, printed if I tip
 last_tx = -1e9
 discovery_end = robot.getTime() + DISCOVERY
+scan_hits, scan_t = None, -1e9    # latest level-frame lidar points and when they were taken
+obs_rx = obs_ry = 0.0             # reactive obstacle repulsion (world frame), refreshed per scan
+slam_ok, last_ate, ate_sum, ate_n = False, -1e9, 0.0, 0
 
 # ---------- main loop ----------
 while robot.step(dt) != -1:
@@ -150,6 +192,9 @@ while robot.step(dt) != -1:
             wi = min(range(len(PATROL)),
                      key=lambda k: math.hypot(PATROL[k][0] - x, PATROL[k][1] - y))
             leader_tyaw = yaw
+            if nav is not None:                # blank map, known start pose (see README)
+                nav.start(x, y, yaw, t)
+                slam_ok = False
 
     # ---- keyboard (every drone drains it, only the leader acts) ----
     # Webots reports a key on EVERY step while it is held, so act only on the
@@ -179,6 +224,36 @@ while robot.step(dt) != -1:
             mo.setVelocity(0.0)
         continue
 
+    # ---- lidar: every drone gets reactive avoidance, the leader also maps ----
+    if lidar is not None and not failed and t - scan_t >= LIDAR_PERIOD - 1e-6:
+        # The floor must not count as an obstacle: when the drone is low and tilted the lower
+        # beams hit it, and after tilt compensation it looks like a lopsided wall that shoves
+        # the drone around (worst for followers: they fly low and tilt harder at take-off).
+        # In the level frame the floor is the plane z = -(lidar height), so cut just above it.
+        floor_cut = max(-1.5, -(z + 0.05) + GROUND_MARGIN)
+        hits, miss = level_points(lidar.getRangeImage(), L_AZ, L_EL, roll, pitch,
+                                  min_r=L_MIN, max_r=L_MAX, band=(floor_cut, 1.5))
+        peers_xy = [predict(p, t, TIMEOUT)[:2] for p in peers.values() if t - p.t <= TIMEOUT]
+        hits = mask_peers(hits, x, y, yaw, peers_xy, PEER_MASK)
+        miss = mask_peers(miss, x, y, yaw, peers_xy, PEER_MASK)
+        scan_hits, scan_t = hits, t
+        obs_rx, obs_ry = (0.0, 0.0) if NOAVOID else obstacle_repulsion(hits.tolist(), yaw, OBST_RADIUS)
+        if am_leader and nav.active:
+            sx_, sy_, _, q = nav.scan(t, hits, miss, yaw)
+            slam_ok = True
+            ate_sum += math.hypot(sx_ - x, sy_ - y)      # GPS is ground truth here, never used to fly
+            ate_n += 1
+            if map_view is not None and t - last_map >= 0.5:
+                last_map = t
+                map_view.draw(nav.grid, (sx_, sy_), nav.path, PATROL, nav.goal)
+            if t - last_ate > 5.0:
+                last_ate = t
+                print(f"[drone{ID}] t={t:6.1f}s SLAM pose ({sx_:.1f},{sy_:.1f}) vs GPS ({x:.1f},{y:.1f}) "
+                      f"err {math.hypot(sx_ - x, sy_ - y):.2f} m, mean {ate_sum / ate_n:.2f} m, "
+                      f"match quality {q:.2f}, plan {'FAILED' if nav.plan_failed else 'ok'}")
+    if not am_leader:
+        slam_ok = False
+
     # ---- pick a target ----
     tz, LIM, VMAX = MY_ALT, 2.0, FOLLOWER_VMAX
     slot_err, bc_yaw = 0.0, yaw
@@ -198,6 +273,10 @@ while robot.step(dt) != -1:
         # whole formation around (the far slots would sweep tens of m/s)
         form_yaw = slew_angle(form_yaw, leader_tyaw, FORM_RATE * dt / 1000.0)
         tx, ty, cmd_yaw, LIM = wx, wy, leader_tyaw, 1.0
+        if nav is not None and slam_ok and not NOAVOID:
+            tx, ty = nav.target(t, (wx, wy))        # next point on the A* route around obstacles
+            if dist > 5 and math.hypot(tx - x, ty - y) > 2.0:
+                leader_tyaw = cmd_yaw = math.atan2(ty - y, tx - x)
         bc_yaw = form_yaw
     else:
         L = peers.get(leader_id)
@@ -243,8 +322,8 @@ while robot.step(dt) != -1:
     if leader_id is not None:
         radius = clamp(0.75 * spacing, 2.0, 6.0)
         rx, ry = repulsion(ID, x, y, z, peers, t, TIMEOUT, radius)
-        tx += rx
-        ty += ry
+        tx += rx + obs_rx
+        ty += ry + obs_ry
 
     # ---- flight controller ----
     # position error -> body frame (forward / left)

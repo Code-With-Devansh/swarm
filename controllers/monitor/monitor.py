@@ -105,6 +105,16 @@ def recolor(leader, live, t):
         emis.setSFColor(col)
 
 
+trees = []
+_ch = robot.getRoot().getField("children")
+for _k in range(_ch.getCount()):
+    _n = _ch.getMFNode(_k)
+    if _n is not None and _n.getTypeName() == "Pine":
+        _p = _n.getPosition()
+        trees.append((_p[0], _p[1]))
+print(f"[monitor] tracking {len(trees)} pine trees for clearance")
+closest_leader = closest_any = float("inf")
+
 heard = {}             # drone id -> time last heard
 view = START_VIEW
 view_dirty = True      # apply the starting view on the first step
@@ -166,6 +176,17 @@ while robot.step(dt) != -1:
     next_log = t + PERIOD
 
     pos = {i: n.getPosition() for i, n in nodes.items()}
+    if trees:                                  # horizontal distance to the nearest trunk centre
+        def tree_d(p):
+            return min(math.hypot(p[0] - tx_, p[1] - ty_) for tx_, ty_ in trees)
+        fl = {i: tree_d(p) for i, p in pos.items() if p[2] > 1.0}
+        if fl:
+            ld = fl.get(leader)
+            if ld is not None:
+                closest_leader = min(closest_leader, ld)
+            closest_any = min(closest_any, min(fl.values()))
+            print(f"[monitor] t={t:6.1f}s  nearest tree: leader {ld if ld is None else round(ld, 1)} m "
+                  f"(closest ever {closest_leader:.1f}), whole swarm closest ever {closest_any:.1f} m")
     flying = {i: p for i, p in pos.items() if p[2] > MIN_FLIGHT_Z}
     if len(flying) < 2:
         continue
